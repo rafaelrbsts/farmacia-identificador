@@ -263,6 +263,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
             <div class="status" id="status" aria-live="polite"><b id="status-t">Sem caixa à vista</b><div class="prog"><i id="prog"></i></div></div>
           </div>
           <div class="confirm" id="confirm" hidden></div>
+          <p class="small muted" id="ocr-line" style="margin:8px 0 0"></p>
           <div class="row" id="cam-ctrl" style="margin-top:10px" hidden>
             <button class="btn primary big" id="cam-toggle">Ligar câmera</button>
             <button class="btn" id="cam-switch">Trocar câmera</button>
@@ -334,7 +335,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
         <h2>Preferências</h2>
         <div class="row"><label class="row" style="gap:6px"><input type="checkbox" id="opt-big"> Letras grandes</label>
         <label class="row" style="gap:6px"><input type="checkbox" id="opt-sound"> Bip ao identificar</label>
-        <label class="row" style="gap:6px"><input type="checkbox" id="opt-confirm"> Pedir confirmação nos remédios de tarja</label></div>
+        <label class="row" style="gap:6px"><input type="checkbox" id="opt-confirm"> Pedir confirmação quando só a imagem identificar</label></div>
         <div class="row" style="margin-top:10px"><button class="btn" id="how-again">Ver o passo a passo de novo</button></div>
       </div>
       <details class="card more">
@@ -370,7 +371,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
   </section>
   </main>
 
-  <p class="disc">Versão 5 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
+  <p class="disc">Versão 6 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
 </div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-t"></div></div>
@@ -3232,6 +3233,68 @@ function renderStock(){
 }
 function renderAll(){renderTicket();renderAlerts();renderOrient();renderPay();renderStock()}
 
+/* ================= LEITURA DO NOME (OCR) ================= */
+var NOMES={dipirona:['dipirona','novalgina'],paracetamol:['paracetamol','tylenol'],ibuprofeno:['ibuprofeno','alivium','advil'],loratadina:['loratadina','claritin'],amoxicilina:['amoxicilina','amoxil'],clonazepam:['clonazepam','rivotril']};
+var OCR={w:null,loading:false,ready:false,busy:false,cand:null,count:0,miss:0,cv:null,err:null};
+function lev(a,b){var m=a.length,n=b.length,i,j,d=[];for(i=0;i<=m;i++){d[i]=[i]}for(j=1;j<=n;j++)d[0][j]=j;
+  for(i=1;i<=m;i++)for(j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]}
+function matchNames(words){
+  var best=null;
+  words.forEach(function(raw){
+    var w=norm(raw).replace(/[^a-z]/g,'');if(w.length<5)return;
+    Object.keys(NOMES).forEach(function(id){NOMES[id].forEach(function(n){
+      var lim=n.length<=5?0:n.length<=8?1:2;
+      if(Math.abs(w.length-n.length)>lim)return;
+      var d=lev(w,n);if(d>lim)return;
+      var sc=1-d/n.length;if(!best||sc>best.score)best={id:id,score:sc,word:w,exact:d===0};
+    })});
+  });
+  return best;
+}
+function setOcrLine(t){var el=$('#ocr-line');if(el)el.textContent=t}
+function loadOCR(){
+  if(OCR.w||OCR.loading||OCR.err)return;OCR.loading=true;setOcrLine('Leitura do nome: preparando…');
+  var abs=function(p){return new URL(p,location.href).href};
+  loadScript('tesseract.min.js').then(function(){
+    return window.Tesseract.createWorker('eng',1,{workerPath:abs('worker.min.js'),corePath:abs('./'),langPath:abs('./'),gzip:true,workerBlobURL:false})
+  }).then(function(w){
+    return w.setParameters({tessedit_pageseg_mode:'11',tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '}).then(function(){OCR.w=w;OCR.ready=true;OCR.loading=false;setOcrLine('Leitura do nome ativa: mostre o nome na caixa de frente para a câmera.');ocrTick()})
+  }).catch(function(e){OCR.loading=false;OCR.err=e;OCR.ready=false;console.warn('OCR',e);setOcrLine('Leitura do nome indisponível ('+String((e&&e.message)||e).slice(0,80)+'). Usando só a imagem.')});
+}
+function grabFrame(){
+  var v=$('#video');if(!v.videoWidth)return null;
+  var s=Math.min(1,1280/v.videoWidth),w=Math.round(v.videoWidth*s),h=Math.round(v.videoHeight*s);
+  var c=OCR.cv||(OCR.cv=document.createElement('canvas'));c.width=w;c.height=h;
+  var x=c.getContext('2d');x.filter='grayscale(1) contrast(1.35)';x.drawImage(v,0,0,w,h);x.filter='none';return c;
+}
+function commit(id,via){
+  if(id===E.lastId&&!E.armed)return false;
+  E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;hideConfirm();beep();addToCart(id,via);return true;
+}
+function handleOcr(words,confs){
+  var m=matchNames(words);
+  if(m){
+    if(OCR.cand===m.id)OCR.count++;else{OCR.cand=m.id;OCR.count=1}
+    OCR.miss=0;var need=m.exact&&m.score===1?1:2;
+    setOcrLine('Li o nome: "'+m.word+'" → '+BY[m.id].classe+(OCR.count>=need?'':' (confirmando…)'));
+    if(OCR.count>=need){var ok=commit(m.id,'ocr');if(ok)setStatus('✔ '+BY[m.id].nome+' (nome lido)',1,true)}
+  }else{
+    OCR.miss++;if(OCR.miss>=3){OCR.cand=null;OCR.count=0;setOcrLine('Leitura do nome ativa: mostre o nome na caixa de frente para a câmera.')}
+  }
+  return m;
+}
+function ocrTick(){
+  if(!OCR.w)return;
+  if(!E.stream||E.mode!=='cam'||document.hidden||OCR.busy){setTimeout(ocrTick,400);return}
+  var c=grabFrame();if(!c){setTimeout(ocrTick,300);return}
+  OCR.busy=true;
+  OCR.w.recognize(c).then(function(r){
+    var ws=(r.data.words||[]).filter(function(x){return x.confidence>=45}).map(function(x){return x.text});
+    handleOcr(ws);
+  }).catch(function(e){console.warn('ocr',e)}).then(function(){OCR.busy=false;setTimeout(ocrTick,150)});
+}
+
+
 /* ================= MOTOR DE LEITURA ================= */
 function setStatus(t,p,done){$('#status-t').textContent=t;$('#prog').style.width=(p*100)+'%';$('#status').classList.toggle('done',!!done)}
 function demoProbs(){
@@ -3258,7 +3321,7 @@ function handleProbs(probs){
     if(E.cand===id)E.count++;else{E.cand=id;E.count=1}
     E.miss=0;
     if(E.count>=N){
-      if(id!==E.lastId||E.armed){E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;if(BY[id].tarja!=='isento'&&S.cfg.confirmTarja)askConfirm(id);else{beep();addToCart(id,'scan')}}
+      if(id!==E.lastId||E.armed){E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;if(S.cfg.confirmTarja&&(BY[id].tarja!=='isento'||OCR.ready))askConfirm(id);else{beep();addToCart(id,'scan')}}
       E.count=N;
     }
     var inFlash=Date.now()<E.flashUntil;
@@ -3271,7 +3334,7 @@ function handleProbs(probs){
 function hideConfirm(){var c=$('#confirm');if(c){c.hidden=true;c.innerHTML='';}E.pending=null}
 function askConfirm(id){
   var c=BY[id],el=$('#confirm');E.pending=id;
-  el.innerHTML='<div><b>Detectei: '+c.nome+'</b> '+badge(c)+'<div class="small">Remédio controlado. É esse mesmo?</div></div><div class="row"><button class="btn primary" id="cf-ok">Sim, adicionar</button><button class="btn" id="cf-no">Não é esse</button></div>';
+  el.innerHTML='<div><b>Detectei: '+c.nome+'</b> '+badge(c)+'<div class="small">Identifiquei só pela imagem. É esse mesmo?</div></div><div class="row"><button class="btn primary" id="cf-ok">Sim, adicionar</button><button class="btn" id="cf-no">Não é esse</button></div>';
   el.hidden=false;beep();
   $('#cf-ok').onclick=function(){hideConfirm();addToCart(id,'scan')};
   $('#cf-no').onclick=hideConfirm;
@@ -3313,9 +3376,9 @@ function startCam(){
   if(!E.model&&S.cfg.modelUrl&&!E.loading){E.loading=true;loadModel(S.cfg.modelUrl).then(function(){E.loading=false})}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('#cam-info').textContent='A câmera exige HTTPS e um navegador compatível.';toast('Câmera indisponível aqui. Abra o arquivo por HTTPS (ex.: GitHub Pages).');return Promise.resolve()}
   if(E.stream)stopCam();
-  return navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:E.facing},width:{ideal:640},height:{ideal:480}},audio:false}).then(function(s){
+  return navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:E.facing},width:{ideal:1280},height:{ideal:720}},audio:false}).then(function(s){
     E.stream=s;var v=$('#video');v.srcObject=s;v.hidden=false;return v.play()}).then(function(){
-    $('#finder-msg').textContent='';$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
+    $('#finder-msg').textContent='';loadOCR();$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
     $('#video').style.transform=E.facing==='user'?'scaleX(-1)':'none';
     if(!E.model){$('#finder-msg').textContent='Câmera ligada. Aguarde o modelo carregar para começar a ler.'}
   }).catch(function(e){
@@ -3492,7 +3555,7 @@ window.__diag=diag;
 bind();$('#how').hidden=!!S.cfg.seen;renderAll();diag();setInterval(diag,1500);renderHist();renderStock();renderBars(null);
 setMode(S.cfg.mode==='demo'?'demo':'cam');
 setTimeout(function(){if(!E.model&&S.cfg.modelUrl&&!E.loading){E.loading=true;loadModel(S.cfg.modelUrl).then(function(){E.loading=false})}},400);
-window.Balcao={S:S,E:E,CATALOG:CATALOG,handleProbs:handleProbs,addToCart:addToCart,computeAlerts:computeAlerts,totals:totals,setDemo:setDemo,csv:csv};
+window.Balcao={OCR:OCR,matchNames:matchNames,handleOcr:handleOcr,S:S,E:E,CATALOG:CATALOG,handleProbs:handleProbs,addToCart:addToCart,computeAlerts:computeAlerts,totals:totals,setDemo:setDemo,csv:csv};
 })();
 </script>
 </body></html>
