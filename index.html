@@ -204,6 +204,10 @@ details.more[open]>summary::before{transform:rotate(90deg)}
 .btn.big{padding:.8em 1.2em;font-size:1.05em}
 .confirm{margin-top:10px;border:2px solid var(--warn);background:var(--warn-soft);border-radius:12px;padding:.7em .85em;display:grid;gap:8px}
 .confirm .badge{vertical-align:middle}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modal[hidden]{display:none}
+.modal .box{background:var(--surface,#fff);color:inherit;border-radius:16px;padding:20px;max-width:360px;width:100%;display:grid;gap:12px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.modal h3{margin:0;font-size:1.25rem}
 .col{display:grid;gap:14px;max-width:680px}
 h3.sub{font:600 .78em var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .orient>p{line-height:1.5}
@@ -262,8 +266,9 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
             <p class="finder-msg" id="finder-msg"></p>
             <div class="status" id="status" aria-live="polite"><b id="status-t">Sem caixa à vista</b><div class="prog"><i id="prog"></i></div></div>
           </div>
-          <div class="confirm" id="confirm" hidden></div>
+          
           <p class="small muted" id="ocr-line" style="margin:8px 0 0"></p>
+          <div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="md-t"></div>
           <div class="row" id="cam-ctrl" style="margin-top:10px" hidden>
             <button class="btn primary big" id="cam-toggle">Ligar câmera</button>
             <button class="btn" id="cam-switch">Trocar câmera</button>
@@ -335,7 +340,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
         <h2>Preferências</h2>
         <div class="row"><label class="row" style="gap:6px"><input type="checkbox" id="opt-big"> Letras grandes</label>
         <label class="row" style="gap:6px"><input type="checkbox" id="opt-sound"> Bip ao identificar</label>
-        <label class="row" style="gap:6px"><input type="checkbox" id="opt-confirm"> Pedir confirmação quando só a imagem identificar</label></div>
+        <label class="row" style="gap:6px" hidden><input type="checkbox" id="opt-confirm"> Pedir confirmação quando só a imagem identificar</label></div>
         <div class="row" style="margin-top:10px"><button class="btn" id="how-again">Ver o passo a passo de novo</button></div>
       </div>
       <details class="card more">
@@ -371,7 +376,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
   </section>
   </main>
 
-  <p class="disc">Versão 6 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
+  <p class="disc">Versão 7 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
 </div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-t"></div></div>
@@ -3239,17 +3244,22 @@ var OCR={w:null,loading:false,ready:false,busy:false,cand:null,count:0,miss:0,cv
 function lev(a,b){var m=a.length,n=b.length,i,j,d=[];for(i=0;i<=m;i++){d[i]=[i]}for(j=1;j<=n;j++)d[0][j]=j;
   for(i=1;i<=m;i++)for(j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]}
 function matchNames(words){
-  var best=null;
-  words.forEach(function(raw){
-    var w=norm(raw).replace(/[^a-z]/g,'');if(w.length<5)return;
+  var found={},toks=[],i;
+  var clean=words.map(function(raw){return norm(raw).replace(/[^a-z]/g,'')}).filter(function(w){return w.length>=2});
+  clean.forEach(function(w){if(w.length>=5)toks.push(w)});
+  for(i=0;i<clean.length-1;i++){var j2=clean[i]+clean[i+1];if(j2.length>=6)toks.push(j2)}
+  toks.forEach(function(w){
     Object.keys(NOMES).forEach(function(id){NOMES[id].forEach(function(n){
-      var lim=n.length<=5?0:n.length<=8?1:2;
-      if(Math.abs(w.length-n.length)>lim)return;
-      var d=lev(w,n);if(d>lim)return;
-      var sc=1-d/n.length;if(!best||sc>best.score)best={id:id,score:sc,word:w,exact:d===0};
+      var sc=0;
+      if(n.length>=6&&w.indexOf(n)>-1)sc=1;
+      else if(n.length>=9&&Math.abs(w.length-n.length)<=1&&lev(w,n)<=1)sc=.85;
+      else if(w===n)sc=1;
+      if(sc&&(!found[id]||sc>found[id].score))found[id]={id:id,score:sc,word:n,exact:sc===1};
     })});
   });
-  return best;
+  var ids=Object.keys(found);
+  if(ids.length!==1)return null; /* ambíguo ou nada: recusa */
+  return found[ids[0]];
 }
 function setOcrLine(t){var el=$('#ocr-line');if(el)el.textContent=t}
 function loadOCR(){
@@ -3258,29 +3268,40 @@ function loadOCR(){
   loadScript('tesseract.min.js').then(function(){
     return window.Tesseract.createWorker('eng',1,{workerPath:abs('worker.min.js'),corePath:abs('./'),langPath:abs('./'),gzip:true,workerBlobURL:false})
   }).then(function(w){
-    return w.setParameters({tessedit_pageseg_mode:'11',tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '}).then(function(){OCR.w=w;OCR.ready=true;OCR.loading=false;setOcrLine('Leitura do nome ativa: mostre o nome na caixa de frente para a câmera.');ocrTick()})
+    return w.setParameters({tessedit_pageseg_mode:'11',tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '}).then(function(){OCR.w=w;OCR.ready=true;OCR.loading=false;setOcrLine('Leitura do nome ativa: deixe o nome da caixa bem visível e sem reflexo.');ocrTick()})
   }).catch(function(e){OCR.loading=false;OCR.err=e;OCR.ready=false;console.warn('OCR',e);setOcrLine('Leitura do nome indisponível ('+String((e&&e.message)||e).slice(0,80)+'). Usando só a imagem.')});
 }
 function grabFrame(){
   var v=$('#video');if(!v.videoWidth)return null;
-  var s=Math.min(1,1280/v.videoWidth),w=Math.round(v.videoWidth*s),h=Math.round(v.videoHeight*s);
+  var k=OCR.n=(OCR.n||0)+1,vw=v.videoWidth,vh=v.videoHeight,sx=0,sy=0,sw=vw,sh=vh,f='grayscale(1) contrast(1.5)';
+  if(k%3===1){f='grayscale(1) contrast(1.5) invert(1)'}
+  if(k%3===2){sx=vw*.1;sy=vh*.15;sw=vw*.8;sh=vh*.7}
+  var s=Math.min(1,1600/sw),w=Math.round(sw*s),h=Math.round(sh*s);
   var c=OCR.cv||(OCR.cv=document.createElement('canvas'));c.width=w;c.height=h;
-  var x=c.getContext('2d');x.filter='grayscale(1) contrast(1.35)';x.drawImage(v,0,0,w,h);x.filter='none';return c;
+  var x=c.getContext('2d');x.filter=f;x.drawImage(v,sx,sy,sw,sh,0,0,w,h);x.filter='none';return c;
 }
-function commit(id,via){
-  if(id===E.lastId&&!E.armed)return false;
-  E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;hideConfirm();beep();addToCart(id,via);return true;
+function offer(id,via){
+  if(E.pending||(id===E.lastId&&!E.armed))return false;
+  E.armed=false;E.lastId=id;OCR.ev={};OCR.cand=null;showModal(id,via);return true;
 }
-function handleOcr(words,confs){
+function showModal(id,via){
+  var c=BY[id],el=$('#modal');E.pending=id;
+  el.innerHTML='<div class="box"><div class="small muted">Leitura concluída</div><h3 id="md-t">'+c.nome+'</h3><div>'+badge(c)+'</div><div class="small">'+c.apres+'</div><div class="row"><button class="btn primary big" id="md-ok">Adicionar à nota</button><button class="btn" id="md-no">Não é esse</button></div></div>';
+  el.hidden=false;beep();
+  $('#md-ok').onclick=function(){hideConfirm();addToCart(id,via);setStatus('Retire a caixa para ler outra',0,false)};
+  $('#md-no').onclick=function(){hideConfirm();setStatus('Aponte para a caixa',0,false)};
+  $('#md-ok').focus();
+}
+function handleOcr(words){
   var m=matchNames(words);
-  if(m){
-    if(OCR.cand===m.id)OCR.count++;else{OCR.cand=m.id;OCR.count=1}
-    OCR.miss=0;var need=m.exact&&m.score===1?1:2;
-    setOcrLine('Li o nome: "'+m.word+'" → '+BY[m.id].classe+(OCR.count>=need?'':' (confirmando…)'));
-    if(OCR.count>=need){var ok=commit(m.id,'ocr');if(ok)setStatus('✔ '+BY[m.id].nome+' (nome lido)',1,true)}
-  }else{
-    OCR.miss++;if(OCR.miss>=3){OCR.cand=null;OCR.count=0;setOcrLine('Leitura do nome ativa: mostre o nome na caixa de frente para a câmera.')}
-  }
+  OCR.ev=OCR.ev||{};
+  Object.keys(OCR.ev).forEach(function(k){OCR.ev[k]*=0.8});
+  if(m){OCR.ev[m.id]=(OCR.ev[m.id]||0)+m.score;OCR.miss=0;OCR.best=m.id}
+  else OCR.miss++;
+  var id=OCR.best,s=id?(OCR.ev[id]||0):0;
+  OCR.prog=Math.min(1,s/1.7);
+  var lt=E.lastTop;
+  if(s>=1.7){if(lt&&lt.id&&lt.id!==id&&lt.p>=.6){OCR.ev={};OCR.prog=0;setOcrLine('Leitura duvidosa: tente reposicionar a caixa.')}else offer(id,'ocr')}
   return m;
 }
 function ocrTick(){
@@ -3289,8 +3310,8 @@ function ocrTick(){
   var c=grabFrame();if(!c){setTimeout(ocrTick,300);return}
   OCR.busy=true;
   OCR.w.recognize(c).then(function(r){
-    var ws=(r.data.words||[]).filter(function(x){return x.confidence>=45}).map(function(x){return x.text});
-    handleOcr(ws);
+    var ws=(r.data.words||[]).filter(function(x){return x.confidence>=30}).map(function(x){return x.text});
+    handleOcr(ws);if(!E.pending)setStatus('Lendo a caixa…',Math.max(OCR.prog||0,E.count/S.cfg.frames),false);
   }).catch(function(e){console.warn('ocr',e)}).then(function(){OCR.busy=false;setTimeout(ocrTick,150)});
 }
 
@@ -3316,29 +3337,22 @@ function handleProbs(probs){
   if(!probs||!probs.length){renderBars(null);return}
   renderBars(probs);
   var top=probs.reduce(function(a,b){return b.probability>a.probability?b:a}),thr=S.cfg.thr/100,N=S.cfg.frames;
-  var id=CLASSMAP[norm(top.className)],bg=BGNAMES.indexOf(norm(top.className))>-1;
+  var id=CLASSMAP[norm(top.className)],bg=BGNAMES.indexOf(norm(top.className))>-1;E.lastTop={id:id||null,p:top.probability};
   if(id&&top.probability>=thr){
     if(E.cand===id)E.count++;else{E.cand=id;E.count=1}
     E.miss=0;
     if(E.count>=N){
-      if(id!==E.lastId||E.armed){E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;if(S.cfg.confirmTarja&&(BY[id].tarja!=='isento'||OCR.ready))askConfirm(id);else{beep();addToCart(id,'scan')}}
+      if((id!==E.lastId||E.armed)&&!OCR.ready&&!OCR.loading)offer(id,'scan');
       E.count=N;
     }
-    var inFlash=Date.now()<E.flashUntil;
+    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Lendo a caixa… '+Math.round(Math.max(OCR.prog||0,Math.min(E.count,N)/N)*100)+'%',Math.max(OCR.prog||0,Math.min(E.count,N)/N),false);
     setStatus(E.pending===id?'Confirme abaixo: '+BY[id].nome:inFlash?'✔ '+BY[id].nome+' adicionado':E.armed===false&&E.count>=N?BY[id].nome+' no extrato. Retire a caixa para ler outra.':'Identificando '+BY[id].classe+' ('+Math.min(E.count,N)+'/'+N+')',E.count/N,E.count>=N);
   }else{
     E.cand=null;E.count=0;E.miss++;if(E.miss>=6){E.armed=true;if(E.pending)hideConfirm()}
-    setStatus(bg||!id?(bg?'Sem caixa à vista':'Classe sem cadastro: '+top.className):'Confiança baixa em '+BY[id].classe+' ('+Math.round(top.probability*100)+'%)',0,false);
+    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Aponte para a caixa',OCR.prog||0,false);
   }
 }
-function hideConfirm(){var c=$('#confirm');if(c){c.hidden=true;c.innerHTML='';}E.pending=null}
-function askConfirm(id){
-  var c=BY[id],el=$('#confirm');E.pending=id;
-  el.innerHTML='<div><b>Detectei: '+c.nome+'</b> '+badge(c)+'<div class="small">Identifiquei só pela imagem. É esse mesmo?</div></div><div class="row"><button class="btn primary" id="cf-ok">Sim, adicionar</button><button class="btn" id="cf-no">Não é esse</button></div>';
-  el.hidden=false;beep();
-  $('#cf-ok').onclick=function(){hideConfirm();addToCart(id,'scan')};
-  $('#cf-no').onclick=hideConfirm;
-}
+function hideConfirm(){var c=$('#modal');if(c){c.hidden=true;c.innerHTML='';}E.pending=null}
 function loop(){
   if(!E.running)return;
   if(document.hidden){setTimeout(loop,400);return}
@@ -3376,7 +3390,7 @@ function startCam(){
   if(!E.model&&S.cfg.modelUrl&&!E.loading){E.loading=true;loadModel(S.cfg.modelUrl).then(function(){E.loading=false})}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('#cam-info').textContent='A câmera exige HTTPS e um navegador compatível.';toast('Câmera indisponível aqui. Abra o arquivo por HTTPS (ex.: GitHub Pages).');return Promise.resolve()}
   if(E.stream)stopCam();
-  return navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:E.facing},width:{ideal:1280},height:{ideal:720}},audio:false}).then(function(s){
+  return navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:E.facing},width:{ideal:1920},height:{ideal:1080}},audio:false}).then(function(s){
     E.stream=s;var v=$('#video');v.srcObject=s;v.hidden=false;return v.play()}).then(function(){
     $('#finder-msg').textContent='';loadOCR();$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
     $('#video').style.transform=E.facing==='user'?'scaleX(-1)':'none';
