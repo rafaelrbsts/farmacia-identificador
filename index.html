@@ -3302,7 +3302,7 @@ function handleOcr(words){
   if(m){OCR.hits[m.id]=(OCR.hits[m.id]||[]);OCR.hits[m.id].push(Date.now());OCR.best=m.id;
     if(m.exact||ocrHits(m.id)>=2){
       var lt=E.lastTop;
-      if(lt&&lt.id&&lt.id!==m.id&&lt.p>=.6){OCR.hits={};setOcrLine('Leitura duvidosa: tente reposicionar a caixa.')}
+      if(lt&&lt.id&&lt.id!==m.id&&lt.p>=.5){OCR.hits={};setOcrLine('Leitura duvidosa: tente reposicionar a caixa.')}
       else{OCR.hits={};offer(m.id,'ocr')}
     }
   }
@@ -3346,7 +3346,7 @@ function handleProbs(probs){
     if(E.cand===id)E.count++;else{E.cand=id;E.count=1}
     E.miss=0;
     if(E.count>=N){
-      if((id!==E.lastId||E.armed)&&!ocrOther(id))offer(id,'scan');
+      if((id!==E.lastId||E.armed)&&OCR.err&&!OCR.ready)offer(id,'scan');
       E.count=N;
     }
     if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Lendo a caixa… '+Math.round(Math.max(ocrProg(),Math.min(E.count,N)/N)*100)+'%',Math.max(ocrProg(),Math.min(E.count,N)/N),false);
