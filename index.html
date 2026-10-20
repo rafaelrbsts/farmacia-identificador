@@ -376,7 +376,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
   </section>
   </main>
 
-  <p class="disc">Versão 8 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
+  <p class="disc">Versão 7 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
 </div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-t"></div></div>
@@ -3286,7 +3286,7 @@ function offer(id,via){
 }
 function showModal(id,via){
   var c=BY[id],el=$('#modal');E.pending=id;
-  el.innerHTML='<div class="box"><div class="small muted">'+(via==='ean'?'Lido pelo código de barras':'Leitura concluída')+'</div><h3 id="md-t">'+c.nome+'</h3><div>'+badge(c)+'</div><div class="small">'+c.apres+'</div><div class="row"><button class="btn primary big" id="md-ok">Adicionar à nota</button><button class="btn" id="md-no">Não é esse</button></div></div>';
+  el.innerHTML='<div class="box"><div class="small muted">Leitura concluída</div><h3 id="md-t">'+c.nome+'</h3><div>'+badge(c)+'</div><div class="small">'+c.apres+'</div><div class="row"><button class="btn primary big" id="md-ok">Adicionar à nota</button><button class="btn" id="md-no">Não é esse</button></div></div>';
   el.hidden=false;beep();
   $('#md-ok').onclick=function(){hideConfirm();addToCart(id,via);setStatus('Retire a caixa para ler outra',0,false)};
   $('#md-no').onclick=function(){hideConfirm();setStatus('Aponte para a caixa',0,false)};
@@ -3332,72 +3332,6 @@ function ocrTick(){
   }).catch(function(e){console.warn('ocr',e)}).then(function(){OCR.busy=false;setTimeout(ocrTick,150)});
 }
 
-
-/* ================= CÓDIGO DE BARRAS (EAN) ================= */
-var BAR={det:null,zx:null,loading:false,err:null,last:null,count:0,until:0,cv:null,running:false,map:store.get('ean',{})};
-function eanOk(c){
-  if(!/^\d+$/.test(c))return false;
-  if(c.length===12)c='0'+c;
-  if(c.length!==13&&c.length!==8)return false;
-  var d=c.split('').map(Number),chk=d.pop(),s=0,i,n=d.length;
-  for(i=0;i<n;i++){s+=d[n-1-i]*(i%2===0?3:1)}
-  return (10-s%10)%10===chk;
-}
-function barFrame(){
-  if(window.__barHook)return window.__barHook();
-  var v=$('#video');if(!v.videoWidth)return null;
-  var w=Math.min(1280,v.videoWidth),h=Math.round(v.videoHeight*w/v.videoWidth);
-  var c=BAR.cv||(BAR.cv=document.createElement('canvas'));c.width=w;c.height=h;c.getContext('2d').drawImage(v,0,0,w,h);return c;
-}
-function startBarcode(){
-  if(BAR.running)return;
-  if('BarcodeDetector' in window){
-    try{BAR.det=new window.BarcodeDetector({formats:['ean_13','ean_8','upc_a']})}catch(e){BAR.det=null}
-  }
-  if(BAR.det){BAR.running=true;barTick();return}
-  if(BAR.loading||BAR.err)return;BAR.loading=true;
-  loadScript('zxing.min.js').then(function(){
-    var Z=window.ZXing,hints=new Map();
-    hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A]);
-    hints.set(Z.DecodeHintType.TRY_HARDER,true);
-    BAR.zx=new Z.MultiFormatReader();BAR.zx.setHints(hints);BAR.loading=false;BAR.running=true;barTick();
-  }).catch(function(e){BAR.loading=false;BAR.err=e;console.warn('BAR',e)});
-}
-function barDecode(c){
-  if(BAR.det)return BAR.det.detect(c).then(function(r){return r&&r.length?r[0].rawValue:null}).catch(function(){return null});
-  try{
-    var Z=window.ZXing,src=new Z.HTMLCanvasElementLuminanceSource(c),bmp=new Z.BinaryBitmap(new Z.HybridBinarizer(src));
-    var r=BAR.zx.decode(bmp);return Promise.resolve(r?r.getText():null);
-  }catch(e){return Promise.resolve(null)}
-}
-function barTick(){
-  if(!BAR.running)return;
-  var wait=BAR.det?200:350;
-  if((!E.stream&&!window.__barHook)||document.hidden||E.pending||Date.now()<BAR.until){setTimeout(barTick,400);return}
-  var c=barFrame();if(!c){setTimeout(barTick,300);return}
-  barDecode(c).then(function(code){
-    if(code&&eanOk(code)){
-      var k=code.length===12?'0'+code:code;
-      if(BAR.last===k)BAR.count++;else{BAR.last=k;BAR.count=1}
-      BAR.seen=Date.now();
-      if(BAR.count>=2)onEan(k);
-    }else if(BAR.last&&Date.now()-(BAR.seen||0)>2500){BAR.last=null;BAR.count=0}
-  }).then(function(){setTimeout(barTick,wait)});
-}
-function onEan(k){
-  BAR.until=Date.now()+4000;BAR.last=null;BAR.count=0;
-  var id=BAR.map[k];
-  if(id&&BY[id]){E.armed=false;E.lastId=id;OCR.hits={};showModal(id,'ean');return}
-  showNewEan(k);
-}
-function showNewEan(k){
-  var el=$('#modal');E.pending='ean';
-  var opts=CATALOG.map(function(c){return '<option value="'+c.id+'">'+c.nome+'</option>'}).join('');
-  el.innerHTML='<div class="box"><div class="small muted">Código de barras lido</div><h3 id="md-t">Código '+k+'</h3><div class="small">Este código ainda não está cadastrado. Se for um dos remédios do sistema, escolha qual é para cadastrar. Nas próximas leituras ele será reconhecido na hora.</div><select id="md-sel" class="btn" style="width:100%"><option value="">Escolha o remédio…</option>'+opts+'</select><div class="row"><button class="btn primary big" id="md-ok">Cadastrar e adicionar</button><button class="btn" id="md-no">Cancelar</button></div></div>';
-  el.hidden=false;beep();
-  $('#md-ok').onclick=function(){var id=$('#md-sel').value;if(!id){$('#md-sel').focus();return}BAR.map[k]=id;store.set('ean',BAR.map);hideConfirm();addToCart(id,'ean');setStatus('Retire a caixa para ler outra',0,false)};
-  $('#md-no').onclick=function(){hideConfirm();setStatus('Aponte para a caixa',0,false)};
-}
 
 /* ================= MOTOR DE LEITURA ================= */
 function setStatus(t,p,done){$('#status-t').textContent=t;$('#prog').style.width=(p*100)+'%';$('#status').classList.toggle('done',!!done)}
@@ -3474,7 +3408,7 @@ function startCam(){
   if(E.stream)stopCam();
   return navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:E.facing},width:{ideal:1920},height:{ideal:1080}},audio:false}).then(function(s){
     E.stream=s;var v=$('#video');v.srcObject=s;v.hidden=false;return v.play()}).then(function(){
-    $('#finder-msg').textContent='';loadOCR();startBarcode();$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
+    $('#finder-msg').textContent='';loadOCR();$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
     $('#video').style.transform=E.facing==='user'?'scaleX(-1)':'none';
     if(!E.model){$('#finder-msg').textContent='Câmera ligada. Aguarde o modelo carregar para começar a ler.'}
   }).catch(function(e){
@@ -3651,7 +3585,7 @@ window.__diag=diag;
 bind();$('#how').hidden=!!S.cfg.seen;renderAll();diag();setInterval(diag,1500);renderHist();renderStock();renderBars(null);
 setMode(S.cfg.mode==='demo'?'demo':'cam');
 setTimeout(function(){if(!E.model&&S.cfg.modelUrl&&!E.loading){E.loading=true;loadModel(S.cfg.modelUrl).then(function(){E.loading=false})}},400);
-window.Balcao={BAR:BAR,onEan:onEan,eanOk:eanOk,OCR:OCR,matchNames:matchNames,handleOcr:handleOcr,S:S,E:E,CATALOG:CATALOG,handleProbs:handleProbs,addToCart:addToCart,computeAlerts:computeAlerts,totals:totals,setDemo:setDemo,csv:csv};
+window.Balcao={OCR:OCR,matchNames:matchNames,handleOcr:handleOcr,S:S,E:E,CATALOG:CATALOG,handleProbs:handleProbs,addToCart:addToCart,computeAlerts:computeAlerts,totals:totals,setDemo:setDemo,csv:csv};
 })();
 </script>
 </body></html>
