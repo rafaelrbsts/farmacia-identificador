@@ -3346,9 +3346,8 @@ function handleProbs(probs){
       E.count=N;
     }
     if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Lendo a caixa… '+Math.round(Math.max(OCR.prog||0,Math.min(E.count,N)/N)*100)+'%',Math.max(OCR.prog||0,Math.min(E.count,N)/N),false);
-    setStatus(E.pending===id?'Confirme abaixo: '+BY[id].nome:inFlash?'✔ '+BY[id].nome+' adicionado':E.armed===false&&E.count>=N?BY[id].nome+' no extrato. Retire a caixa para ler outra.':'Identificando '+BY[id].classe+' ('+Math.min(E.count,N)+'/'+N+')',E.count/N,E.count>=N);
   }else{
-    E.cand=null;E.count=0;E.miss++;if(E.miss>=6){E.armed=true;if(E.pending)hideConfirm()}
+    E.cand=null;E.count=0;E.miss++;if(E.miss>=6&&!E.pending){E.armed=true}
     if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Aponte para a caixa',OCR.prog||0,false);
   }
 }
