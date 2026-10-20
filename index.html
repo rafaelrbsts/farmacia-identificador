@@ -194,6 +194,19 @@ td img{width:44px;height:44px;object-fit:cover;border-radius:6px;display:block}
 td.ok{color:var(--ok);font-weight:700}td.no{color:var(--danger);font-weight:700}
 input[type=range]{width:100%;accent-color:var(--accent)}
 .rl{display:flex;justify-content:space-between;gap:10px}
+/* simplificação */
+.how{border:2px solid var(--accent);background:var(--accent-soft);margin-bottom:14px}
+.how .steps{margin:0 0 10px;padding-left:1.2em;display:grid;gap:4px}
+details.more>summary{cursor:pointer;font-weight:600;list-style:none;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+details.more[open]>summary::before{transform:rotate(90deg)}
+.btn.big{padding:.8em 1.2em;font-size:1.05em}
+.confirm{margin-top:10px;border:2px solid var(--warn);background:var(--warn-soft);border-radius:12px;padding:.7em .85em;display:grid;gap:8px}
+.confirm .badge{vertical-align:middle}
+.col{display:grid;gap:14px;max-width:680px}
+h3.sub{font:600 .78em var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.orient>p{line-height:1.5}
 /* overlay */
 .overlay{position:fixed;inset:0;background:rgba(5,10,8,.6);z-index:20;display:grid;place-items:center;padding:16px;overflow:auto}
 .overlay[hidden]{display:none!important}
@@ -212,7 +225,7 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
   <header class="top">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
-      <div><h1>Balcão Rápido</h1><small>Assistente de balcão farmacêutico · TensorFlow.js</small></div>
+      <div><h1>Balcão Rápido</h1><small>Identifica o remédio pela câmera</small></div>
     </div>
     <span class="sim-tag">Simulação acadêmica</span>
   </header>
@@ -227,14 +240,19 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
   <main>
   <!-- ============ BALCÃO ============ -->
   <section id="v-balcao" class="view on">
+    <div class="card how" id="how" hidden>
+      <h2>Como usar</h2>
+      <ol class="steps"><li>Toque em <b>Ligar câmera</b>.</li><li>Mostre a caixa do remédio para a câmera e espere o aviso verde.</li><li>Confira o extrato, escolha como o cliente vai pagar e toque em <b>Concluir atendimento</b>.</li></ol>
+      <button class="btn" id="how-ok">Entendi</button>
+    </div>
     <div class="grid">
       <div class="stack">
         <div class="card o1">
           <div class="row between" style="margin-bottom:10px">
-            <h2 style="margin:0">Leitura</h2>
+            <h2 style="margin:0">Leitura <span class="small muted" id="model-chip"></span></h2>
             <div class="seg" role="group" aria-label="Fonte da leitura">
-              <button id="m-demo" aria-pressed="true">Demonstração</button>
-              <button id="m-cam" aria-pressed="false">Câmera</button>
+              <button id="m-cam" aria-pressed="true">Câmera</button>
+              <button id="m-demo" aria-pressed="false">Teste sem câmera</button>
             </div>
           </div>
           <div class="finder" id="finder">
@@ -244,8 +262,9 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
             <p class="finder-msg" id="finder-msg"></p>
             <div class="status" id="status" aria-live="polite"><b id="status-t">Sem caixa à vista</b><div class="prog"><i id="prog"></i></div></div>
           </div>
+          <div class="confirm" id="confirm" hidden></div>
           <div class="row" id="cam-ctrl" style="margin-top:10px" hidden>
-            <button class="btn primary" id="cam-toggle">Ligar câmera</button>
+            <button class="btn primary big" id="cam-toggle">Ligar câmera</button>
             <button class="btn" id="cam-switch">Trocar câmera</button>
             <span class="small muted" id="cam-info"></span>
           </div>
@@ -254,10 +273,9 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
             <div class="row" style="margin-top:8px"><button class="btn ghost" id="demo-clear">Retirar caixa</button><span class="small muted">Toque numa caixa para simulá-la na frente da câmera.</span></div>
           </div>
         </div>
-        <div class="card o6">
-          <div class="row between"><h2 style="margin:0">Confiança por classe</h2><span class="small muted" id="thr-note"></span></div>
-          <div class="bars" id="bars" style="margin-top:8px"></div>
-        </div>
+        <details class="card o6 more"><summary>Detalhes da leitura <span class="small muted" id="thr-note"></span></summary>
+          <div class="bars" id="bars" style="margin-top:10px"></div>
+        </details>
         <div class="card orient o3" id="orient"></div>
       </div>
 
@@ -266,9 +284,9 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
         <div class="ticket o4" id="ticket"></div>
         <div class="card o5" id="pay">
           <h2>Pagamento</h2>
-          <div class="field"><label for="desc">Desconto</label>
-            <select id="desc"></select></div>
-          <div class="field"><span class="lbl">Forma de pagamento</span>
+          <details class="more" style="margin-bottom:10px"><summary>Aplicar desconto (opcional)</summary>
+            <div class="field" style="margin:8px 0 0"><select id="desc" aria-label="Desconto"></select></div></details>
+          <div class="field"><span class="lbl">Como o cliente vai pagar</span>
             <div class="paygrid" id="paygrid">
               <button data-pay="dinheiro" aria-pressed="true">Dinheiro</button>
               <button data-pay="pix" aria-pressed="false">PIX</button>
@@ -311,46 +329,48 @@ pre.sum{white-space:pre-wrap;word-break:break-word;font:400 .8em var(--font-mono
 
   <!-- ============ AJUSTES ============ -->
   <section id="v-ajustes" class="view">
-    <div class="grid">
-      <div class="stack">
-        <div class="card">
-          <h2>Modelo do Teachable Machine</h2>
-          <div class="field"><label for="model-url">Link do modelo (exportar → Upload my model)</label>
-            <input id="model-url" type="url" placeholder="https://teachablemachine.withgoogle.com/models/XXXXXXX/" autocomplete="off"></div>
-          <div class="row"><button class="btn primary" id="model-load">Carregar modelo</button><span class="small" id="model-status" role="status">Nenhum modelo carregado. A demonstração funciona sem ele.</span></div>
-          <div class="o-block"><h3>Nomes das classes no treino</h3>
-            <p class="small" style="margin:0" id="class-help"></p></div>
-        </div>
-        <div class="card">
-          <h2>Estabilização da leitura</h2>
-          <div class="field"><div class="rl"><label for="thr">Confiança mínima</label><b id="thr-v" class="small"></b></div><input id="thr" type="range" min="60" max="99" step="1"></div>
-          <div class="field"><div class="rl"><label for="frames">Quadros seguidos para confirmar</label><b id="frames-v" class="small"></b></div><input id="frames" type="range" min="3" max="15" step="1"></div>
-          <p class="small muted" style="margin:0">O item só entra no extrato depois de aparecer com a confiança mínima durante esses quadros seguidos. Para ler o mesmo produto outra vez, retire a caixa da frente da câmera.</p>
-        </div>
-        <div class="card">
-          <h2>Diagnóstico da câmera</h2>
-          <ul class="small" id="diag" style="margin:0;padding-left:18px;display:grid;gap:3px"></ul>
-        </div>
-        <div class="card">
-          <h2>Acessibilidade</h2>
-          <div class="row"><label class="row" style="gap:6px"><input type="checkbox" id="opt-big"> Letras grandes</label>
-          <label class="row" style="gap:6px"><input type="checkbox" id="opt-sound"> Bip ao identificar</label></div>
-        </div>
+    <div class="col">
+      <div class="card">
+        <h2>Preferências</h2>
+        <div class="row"><label class="row" style="gap:6px"><input type="checkbox" id="opt-big"> Letras grandes</label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="opt-sound"> Bip ao identificar</label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="opt-confirm"> Pedir confirmação nos remédios de tarja</label></div>
+        <div class="row" style="margin-top:10px"><button class="btn" id="how-again">Ver o passo a passo de novo</button></div>
       </div>
-      <div class="stack">
-        <div class="card">
-          <h2>Testar o modelo com imagens</h2>
-          <p class="small muted" style="margin-top:0">Escolha várias fotos de caixas. Se o nome do arquivo contiver o medicamento (ex.: <code>dipirona_01.jpg</code>), o app compara com a previsão e calcula a acurácia. Requer o modelo carregado.</p>
-          <input type="file" id="test-files" accept="image/*" multiple>
-          <p class="small" id="test-sum" style="margin:10px 0 6px"></p>
-          <div class="tbl"><table id="test-tbl" hidden><thead><tr><th></th><th>Arquivo</th><th>Previsão</th><th>Conf.</th><th>Esperado</th></tr></thead><tbody></tbody></table></div>
+      <details class="card more">
+        <summary>Avançado: modelo, sensibilidade e testes</summary>
+        <div style="display:grid;gap:18px;margin-top:12px">
+          <div>
+            <h3 class="sub">Modelo do Teachable Machine</h3>
+            <div class="field"><label for="model-url">Link do modelo</label>
+              <input id="model-url" type="url" placeholder="https://teachablemachine.withgoogle.com/models/XXXXXXX/" autocomplete="off"></div>
+            <div class="row"><button class="btn primary" id="model-load">Carregar modelo</button><span class="small" id="model-status" role="status">O modelo carrega sozinho ao abrir o app.</span></div>
+            <p class="small muted" style="margin:8px 0 0" id="class-help"></p>
+          </div>
+          <div>
+            <h3 class="sub">Sensibilidade da leitura</h3>
+            <div class="field"><div class="rl"><label for="thr">Confiança mínima</label><b id="thr-v" class="small"></b></div><input id="thr" type="range" min="60" max="99" step="1"></div>
+            <div class="field"><div class="rl"><label for="frames">Quadros seguidos para confirmar</label><b id="frames-v" class="small"></b></div><input id="frames" type="range" min="3" max="15" step="1"></div>
+            <p class="small muted" style="margin:0">Mais confiança e mais quadros deixam a leitura mais rigorosa e um pouco mais lenta. Para ler o mesmo remédio outra vez, tire a caixa da frente da câmera.</p>
+          </div>
+          <div>
+            <h3 class="sub">Diagnóstico da câmera</h3>
+            <ul class="small" id="diag" style="margin:0;padding-left:18px;display:grid;gap:3px"></ul>
+          </div>
+          <div>
+            <h3 class="sub">Testar o modelo com fotos</h3>
+            <p class="small muted" style="margin-top:0">Escolha fotos de caixas. Se o nome do arquivo tiver o remédio (ex.: <code>dipirona_01.jpg</code>), o app compara e calcula a acurácia.</p>
+            <input type="file" id="test-files" accept="image/*" multiple>
+            <p class="small" id="test-sum" style="margin:10px 0 6px"></p>
+            <div class="tbl"><table id="test-tbl" hidden><thead><tr><th></th><th>Arquivo</th><th>Previsão</th><th>Conf.</th><th>Esperado</th></tr></thead><tbody></tbody></table></div>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   </section>
   </main>
 
-  <p class="disc">Versão 4 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
+  <p class="disc">Versão 5 · bibliotecas embutidas. Protótipo didático. Preços, estoques, interações e regras de receita são fictícios ou simplificados e não substituem a bula nem a orientação do farmacêutico responsável.</p>
 </div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-t"></div></div>
@@ -3083,7 +3103,7 @@ var DESC=[{id:'none',nome:'Sem desconto',pct:0},{id:'social',nome:'Programa soci
 var initialStock=function(){var o={};CATALOG.forEach(function(c){o[c.id]=c.estoque});return o};
 var S={cart:[],last:null,pay:'dinheiro',desc:'none',recebido:'',parcelas:1,
   stock:store.get('stock',null)||initialStock(),hist:store.get('hist',[]),seq:store.get('seq',1),
-  cfg:Object.assign({thr:90,frames:8,modelUrl:'https://teachablemachine.withgoogle.com/models/TGMzKrTUD/',big:false,sound:true,mode:'demo'},store.get('cfg',{}))};
+  cfg:Object.assign({thr:95,frames:8,modelUrl:'https://teachablemachine.withgoogle.com/models/2UelqS_YO/',big:false,sound:true,mode:'cam',seen:false,confirmTarja:true},store.get('cfg5',{}))};
 var E={mode:'demo',model:null,labels:[],stream:null,facing:'environment',running:false,cand:null,count:0,armed:true,lastId:null,miss:0,
   demoTarget:null,demoTimer:null,busy:false,flashUntil:0,lastTop:null};
 
@@ -3154,13 +3174,14 @@ function renderTicket(){
 }
 function renderOrient(){
   var el=$('#orient'),c=BY[S.last];
-  if(!c){el.innerHTML='<h2>Orientações de venda</h2><p class="muted" style="margin:0">Quando um medicamento for identificado, a tarja, a posologia e os cuidados aparecem aqui.</p>';return}
+  if(!c){el.innerHTML='<h2>Orientações de venda</h2><p class="muted" style="margin:0">Quando um remédio for identificado, as orientações aparecem aqui.</p>';return}
   var rx='';if(c.rx){var x=RXTXT[c.rx];rx='<div class="rxban '+(c.tarja==='preta'?'preta':'')+'"><b>'+x.t+'</b><span class="small">'+x.d+'</span></div>'}
-  el.innerHTML='<h2>'+c.nome+' '+badge(c)+'</h2><div class="small muted">'+c.apres+' · '+c.ativo+'</div>'+rx+
-   '<div class="o-block"><h3>Orientação de venda</h3>'+c.venda+'</div>'+
+  el.innerHTML='<h2>'+c.nome+' '+badge(c)+'</h2><div class="small muted">'+c.apres+'</div>'+rx+
+   '<p style="margin:10px 0 0">'+c.venda+'</p>'+
+   '<details class="more" style="margin-top:10px"><summary>Posologia, cuidados e contraindicações</summary>'+
    '<div class="o-block"><h3>Posologia básica</h3>'+c.pos+'</div>'+
    '<div class="o-block"><h3>Cuidados</h3>'+c.cuidados+'</div>'+
-   '<div class="o-block"><h3>Contraindicações rápidas</h3><div class="chips">'+c.contra.map(function(k){return '<span class="chip">'+CONTRA[k]+'</span>'}).join('')+'</div></div>'+
+   '<div class="o-block"><h3>Contraindicações rápidas</h3><div class="chips">'+c.contra.map(function(k){return '<span class="chip">'+CONTRA[k]+'</span>'}).join('')+'</div></div></details>'+
    '<div class="row" style="margin-top:12px"><button class="btn" id="speak">Ouvir orientações</button></div>';
   $('#speak').onclick=function(){speak(c.nome+'. '+c.venda+' Posologia: '+c.pos+' Cuidados: '+c.cuidados)};
 }
@@ -3185,9 +3206,9 @@ function renderPay(){
 }
 function renderBars(probs){
   var el=$('#bars'),thr=S.cfg.thr/100;
-  $('#thr-note').textContent='mínimo '+S.cfg.thr+'% · '+S.cfg.frames+' quadros';
+  $('#thr-note').textContent='(confirma com '+S.cfg.thr+'%)';
   var list=probs&&probs.length?probs:(E.labels.length?E.labels.map(function(n){return{className:n,probability:0}}):[]);
-  if(!list.length){el.innerHTML='<p class="small muted" style="margin:0">Sem leituras. Escolha uma caixa na demonstração ou ligue a câmera com o modelo carregado.</p>';return}
+  if(!list.length){el.innerHTML='<p class="small muted" style="margin:0">Sem leituras ainda. Ligue a câmera e mostre uma caixa.</p>';return}
   var top=list.reduce(function(a,b){return b.probability>a.probability?b:a});
   el.innerHTML=list.map(function(p){var known=CLASSMAP[norm(p.className)]||BGNAMES.indexOf(norm(p.className))>-1;
     return '<div class="bar'+(p===top&&p.probability>0.01?' top':'')+(known?'':' unk')+'"><span>'+p.className+'</span><span class="track"><span class="fill" style="width:'+(p.probability*100).toFixed(1)+'%"></span><span class="thr" style="left:'+S.cfg.thr+'%"></span></span><span class="pct">'+(p.probability*100).toFixed(0)+'%</span></div>'}).join('');
@@ -3217,7 +3238,7 @@ function demoProbs(){
   var names=CATALOG.map(function(c){return c.classe}).concat(['Nenhum']);
   var tgt=E.demoTarget?BY[E.demoTarget].classe:'Nenhum';
   var dip=Math.random()<.03;
-  var main=dip?0.62+Math.random()*.15:0.93+Math.random()*.06;
+  var th=S.cfg.thr/100,main=dip?0.62+Math.random()*.15:th+.003+(0.997-th)*Math.random();
   var rest=names.length-1,w=names.filter(function(n){return n!==tgt}).map(function(){return Math.random()+.05}),ws=w.reduce(function(a,b){return a+b},0),k=0;
   return names.map(function(n){return{className:n,probability:n===tgt?main:(1-main)*w[k++]/ws}});
 }
@@ -3237,15 +3258,23 @@ function handleProbs(probs){
     if(E.cand===id)E.count++;else{E.cand=id;E.count=1}
     E.miss=0;
     if(E.count>=N){
-      if(id!==E.lastId||E.armed){E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;beep();addToCart(id,'scan')}
+      if(id!==E.lastId||E.armed){E.armed=false;E.lastId=id;E.flashUntil=Date.now()+1400;if(BY[id].tarja!=='isento'&&S.cfg.confirmTarja)askConfirm(id);else{beep();addToCart(id,'scan')}}
       E.count=N;
     }
     var inFlash=Date.now()<E.flashUntil;
-    setStatus(inFlash?'✔ '+BY[id].nome+' adicionado':E.armed===false&&E.count>=N?BY[id].nome+' no extrato. Retire a caixa para ler outra.':'Identificando '+BY[id].classe+' ('+Math.min(E.count,N)+'/'+N+')',E.count/N,E.count>=N);
+    setStatus(E.pending===id?'Confirme abaixo: '+BY[id].nome:inFlash?'✔ '+BY[id].nome+' adicionado':E.armed===false&&E.count>=N?BY[id].nome+' no extrato. Retire a caixa para ler outra.':'Identificando '+BY[id].classe+' ('+Math.min(E.count,N)+'/'+N+')',E.count/N,E.count>=N);
   }else{
-    E.cand=null;E.count=0;E.miss++;if(E.miss>=6)E.armed=true;
+    E.cand=null;E.count=0;E.miss++;if(E.miss>=6){E.armed=true;if(E.pending)hideConfirm()}
     setStatus(bg||!id?(bg?'Sem caixa à vista':'Classe sem cadastro: '+top.className):'Confiança baixa em '+BY[id].classe+' ('+Math.round(top.probability*100)+'%)',0,false);
   }
+}
+function hideConfirm(){var c=$('#confirm');if(c){c.hidden=true;c.innerHTML='';}E.pending=null}
+function askConfirm(id){
+  var c=BY[id],el=$('#confirm');E.pending=id;
+  el.innerHTML='<div><b>Detectei: '+c.nome+'</b> '+badge(c)+'<div class="small">Remédio controlado. É esse mesmo?</div></div><div class="row"><button class="btn primary" id="cf-ok">Sim, adicionar</button><button class="btn" id="cf-no">Não é esse</button></div>';
+  el.hidden=false;beep();
+  $('#cf-ok').onclick=function(){hideConfirm();addToCart(id,'scan')};
+  $('#cf-no').onclick=hideConfirm;
 }
 function loop(){
   if(!E.running)return;
@@ -3265,13 +3294,13 @@ function syncTiles(){$$('#tiles .tile').forEach(function(t){t.setAttribute('aria
 
 /* ---- modo ---- */
 function setMode(m){
-  E.mode=m;S.cfg.mode=m;store.set('cfg',S.cfg);
+  E.mode=m;S.cfg.mode=m;store.set('cfg5',S.cfg);
   $('#m-demo').setAttribute('aria-pressed',String(m==='demo'));$('#m-cam').setAttribute('aria-pressed',String(m==='cam'));
   $('#demo-ctrl').hidden=m!=='demo';$('#cam-ctrl').hidden=m!=='cam';
   $('#video').hidden=m!=='cam'||!E.stream;
   E.cand=null;E.count=0;E.armed=true;E.lastId=null;E.miss=0;
   var msg='';
-  if(m==='cam'&&!E.stream)msg='Toque em "Ligar câmera". '+(E.model?'':'Carregue o modelo em Ajustes e testes.');
+  if(m==='cam'&&!E.stream)msg='Toque em "Ligar câmera" abaixo.';
   $('#finder-msg').textContent=msg;
   renderPack();
   if(m==='cam'&&!E.model)renderBars(E.labels.length?null:null);
@@ -3288,7 +3317,7 @@ function startCam(){
     E.stream=s;var v=$('#video');v.srcObject=s;v.hidden=false;return v.play()}).then(function(){
     $('#finder-msg').textContent='';$('#cam-toggle').textContent='Desligar câmera';$('#cam-info').textContent=E.facing==='environment'?'Câmera traseira':'Câmera frontal';
     $('#video').style.transform=E.facing==='user'?'scaleX(-1)':'none';
-    if(!E.model){$('#finder-msg').textContent='Câmera ligada, mas nenhuma leitura acontece sem o modelo. Carregue o link em Ajustes.';toast('Falta carregar o modelo (aba Ajustes).')}
+    if(!E.model){$('#finder-msg').textContent='Câmera ligada. Aguarde o modelo carregar para começar a ler.'}
   }).catch(function(e){
     var framed=false;try{framed=window.self!==window.top}catch(x){framed=true}
     var m=framed&&e&&(e.name==='NotAllowedError'||e.name==='SecurityError')?'A câmera é bloqueada nesta página incorporada (pré-visualização). Abra o arquivo balcao-rapido.html direto no navegador, por HTTPS.':e&&e.name==='NotAllowedError'?'Permissão da câmera negada. Toque no cadeado ao lado do endereço e permita a câmera.':e&&e.name==='NotFoundError'?'Nenhuma câmera encontrada.':'Não foi possível abrir a câmera ('+(e&&e.name||'erro')+').';
@@ -3306,7 +3335,7 @@ function loadModel(url){
   if(!url){st.textContent='Cole o link do modelo.';return Promise.resolve()}
   if(!/^https?:\/\//.test(url)){st.textContent='O link precisa começar com https://';return Promise.resolve()}
   if(!/\/$/.test(url))url+='/';
-  var step=function(t){st.textContent=t};
+  var step=function(t){st.textContent=t;var ch=$('#model-chip');if(ch)ch.textContent=/Modelo carregado/.test(t)?'· modelo pronto ✔':/Falhou/.test(t)?'· modelo com erro (veja Ajustes)':'· carregando modelo…'};
   var fail=function(where,e){E.model=null;var m=(e&&(e.message||e.name))||String(e);step('Falhou em: '+where+'. '+String(m).slice(0,160)+' Toque em "Carregar modelo" para tentar de novo.');console.warn(where,e)};
   step('1/3 Conferindo o link do modelo…');
   return fetch(url+'model.json',{cache:'no-store'}).then(function(r){
@@ -3316,7 +3345,7 @@ function loadModel(url){
     step('2/3 Preparando o TensorFlow…');return ensureTM()}).then(function(){
     step('3/3 Baixando o modelo (alguns MB)…');
     return Promise.race([window.tmImage.load(url+'model.json',url+'metadata.json'),new Promise(function(_,rej){setTimeout(function(){rej(new Error('demorou mais de 60 s. Verifique a conexão.'))},60000)})])}).then(function(m){
-    E.model=m;E.labels=m.getClassLabels?m.getClassLabels():[];S.cfg.modelUrl=url;store.set('cfg',S.cfg);
+    E.model=m;E.labels=m.getClassLabels?m.getClassLabels():[];S.cfg.modelUrl=url;store.set('cfg5',S.cfg);
     var known=E.labels.filter(function(n){return CLASSMAP[norm(n)]||BGNAMES.indexOf(norm(n))>-1}).length;
     step('Modelo carregado: '+E.labels.length+' classes ('+known+' reconhecidas).');renderBars(null);
     if(E.mode==='cam'&&!E.stream)$('#finder-msg').textContent='Toque em "Ligar câmera".';
@@ -3430,6 +3459,8 @@ function bind(){
   $('#finalizar').onclick=finalizar;
   $('#overlay').onclick=function(e){if(e.target.id==='overlay')$('#overlay').hidden=true};
   document.addEventListener('keydown',function(e){if(e.key==='Escape')$('#overlay').hidden=true});
+  $('#how-ok').onclick=function(){S.cfg.seen=true;store.set('cfg5',S.cfg);$('#how').hidden=true};
+  $('#how-again').onclick=function(){$('#how').hidden=false;$$('.tab')[0].click();window.scrollTo(0,0)};
   $('#csv-save').onclick=saveCSV;$('#csv-copy').onclick=copyCSV;
   var clr=$('#hist-clear'),ct;clr.onclick=function(){if(clr.dataset.sure){S.hist=[];S.seq=1;store.set('hist',[]);store.set('seq',1);clr.textContent='Limpar histórico';delete clr.dataset.sure;renderHist();renderAll();toast('Histórico limpo.')}else{clr.dataset.sure='1';clr.textContent='Toque de novo para confirmar';clearTimeout(ct);ct=setTimeout(function(){clr.textContent='Limpar histórico';delete clr.dataset.sure},4000)}};
   $('#stk').onclick=function(e){var b=e.target.closest('[data-rep]');if(!b)return;S.stock[b.dataset.rep]+=5;store.set('stock',S.stock);renderStock();renderTicket()};
@@ -3438,12 +3469,13 @@ function bind(){
   $('#model-load').onclick=function(){loadModel($('#model-url').value)};
   var thr=$('#thr'),fr=$('#frames');thr.value=S.cfg.thr;fr.value=S.cfg.frames;
   var sync=function(){$('#thr-v').textContent=S.cfg.thr+'%';$('#frames-v').textContent=S.cfg.frames+' quadros';renderBars(null)};
-  thr.oninput=function(){S.cfg.thr=+thr.value;store.set('cfg',S.cfg);sync()};fr.oninput=function(){S.cfg.frames=+fr.value;store.set('cfg',S.cfg);sync()};sync();
+  thr.oninput=function(){S.cfg.thr=+thr.value;store.set('cfg5',S.cfg);sync()};fr.oninput=function(){S.cfg.frames=+fr.value;store.set('cfg5',S.cfg);sync()};sync();
   var big=$('#opt-big'),snd=$('#opt-sound');big.checked=S.cfg.big;snd.checked=S.cfg.sound;document.body.classList.toggle('big',S.cfg.big);
-  big.onchange=function(){S.cfg.big=big.checked;document.body.classList.toggle('big',big.checked);store.set('cfg',S.cfg)};
-  snd.onchange=function(){S.cfg.sound=snd.checked;store.set('cfg',S.cfg)};
+  big.onchange=function(){S.cfg.big=big.checked;document.body.classList.toggle('big',big.checked);store.set('cfg5',S.cfg)};
+  snd.onchange=function(){S.cfg.sound=snd.checked;store.set('cfg5',S.cfg)};
+  var cf=$('#opt-confirm');cf.checked=S.cfg.confirmTarja;cf.onchange=function(){S.cfg.confirmTarja=cf.checked;store.set('cfg5',S.cfg)};
   $('#test-files').onchange=function(e){if(e.target.files.length)testImages(e.target.files)};
-  $('#class-help').textContent='Crie uma classe para cada nome: '+CATALOG.map(function(c){return c.classe}).join(', ')+'. Mais uma classe chamada "Nenhum" com fundo e mãos, sem caixa.';
+  $('#class-help').textContent='Classes do modelo: '+CATALOG.map(function(c){return c.classe}).join(', ')+' e Nenhum (fundo, mãos, objetos).';
 }
 
 function diag(){
@@ -3452,13 +3484,14 @@ function diag(){
    [window.isSecureContext,'Contexto seguro (HTTPS ou localhost)','Abra por HTTPS, por exemplo no GitHub Pages.'],
    [!framed,'Página aberta direto, fora de moldura','Em pré-visualizações incorporadas a câmera é bloqueada. Abra o arquivo em uma aba própria.'],
    [!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia),'API de câmera disponível','Use Chrome, Edge, Safari ou Firefox atualizados.'],
-   [!!E.stream,'Câmera ligada','Vá em Balcão, escolha Câmera e toque em Ligar câmera.'],
+   [!!E.stream,'Câmera ligada','Na aba Balcão, toque em Ligar câmera.'],
    [!!E.model,'Modelo carregado','Cole o link do modelo acima e toque em Carregar modelo.']];
   $('#diag').innerHTML=items.map(function(i){return '<li>'+(i[0]?'✔ ':'✘ ')+i[1]+(i[0]?'':' <span class="muted">— '+i[2]+'</span>')+'</li>'}).join('');
 }
 window.__diag=diag;
-bind();renderAll();diag();setInterval(diag,1500);renderHist();renderStock();renderBars(null);
-setMode(S.cfg.mode==='cam'?'cam':'demo');
+bind();$('#how').hidden=!!S.cfg.seen;renderAll();diag();setInterval(diag,1500);renderHist();renderStock();renderBars(null);
+setMode(S.cfg.mode==='demo'?'demo':'cam');
+setTimeout(function(){if(!E.model&&S.cfg.modelUrl&&!E.loading){E.loading=true;loadModel(S.cfg.modelUrl).then(function(){E.loading=false})}},400);
 window.Balcao={S:S,E:E,CATALOG:CATALOG,handleProbs:handleProbs,addToCart:addToCart,computeAlerts:computeAlerts,totals:totals,setDemo:setDemo,csv:csv};
 })();
 </script>
