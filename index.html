@@ -3276,13 +3276,13 @@ function grabFrame(){
   var k=OCR.n=(OCR.n||0)+1,vw=v.videoWidth,vh=v.videoHeight,sx=0,sy=0,sw=vw,sh=vh,f='grayscale(1) contrast(1.5)';
   if(k%3===1){f='grayscale(1) contrast(1.5) invert(1)'}
   if(k%3===2){sx=vw*.1;sy=vh*.15;sw=vw*.8;sh=vh*.7}
-  var s=Math.min(1,1600/sw),w=Math.round(sw*s),h=Math.round(sh*s);
+  var s=Math.min(1,1280/sw),w=Math.round(sw*s),h=Math.round(sh*s);
   var c=OCR.cv||(OCR.cv=document.createElement('canvas'));c.width=w;c.height=h;
   var x=c.getContext('2d');x.filter=f;x.drawImage(v,sx,sy,sw,sh,0,0,w,h);x.filter='none';return c;
 }
 function offer(id,via){
   if(E.pending||(id===E.lastId&&!E.armed))return false;
-  E.armed=false;E.lastId=id;OCR.ev={};OCR.cand=null;showModal(id,via);return true;
+  E.armed=false;E.lastId=id;OCR.hits={};showModal(id,via);return true;
 }
 function showModal(id,via){
   var c=BY[id],el=$('#modal');E.pending=id;
@@ -3292,16 +3292,20 @@ function showModal(id,via){
   $('#md-no').onclick=function(){hideConfirm();setStatus('Aponte para a caixa',0,false)};
   $('#md-ok').focus();
 }
+var OCR_WIN=7000;
+function ocrOther(id){var o=false;Object.keys(OCR.hits||{}).forEach(function(k){if(k!==id&&ocrHits(k)>0)o=true});return o}
+function ocrHits(id){var n=Date.now();OCR.hits=OCR.hits||{};var l=(OCR.hits[id]||[]).filter(function(x){return n-x<OCR_WIN});OCR.hits[id]=l;return l.length}
+function ocrProg(){var best=0;Object.keys(OCR.hits||{}).forEach(function(id){best=Math.max(best,ocrHits(id))});return Math.min(.95,best/2)}
 function handleOcr(words){
   var m=matchNames(words);
-  OCR.ev=OCR.ev||{};
-  Object.keys(OCR.ev).forEach(function(k){OCR.ev[k]*=0.8});
-  if(m){OCR.ev[m.id]=(OCR.ev[m.id]||0)+m.score;OCR.miss=0;OCR.best=m.id}
-  else OCR.miss++;
-  var id=OCR.best,s=id?(OCR.ev[id]||0):0;
-  OCR.prog=Math.min(1,s/1.7);
-  var lt=E.lastTop;
-  if(s>=1.7){if(lt&&lt.id&&lt.id!==id&&lt.p>=.6){OCR.ev={};OCR.prog=0;setOcrLine('Leitura duvidosa: tente reposicionar a caixa.')}else offer(id,'ocr')}
+  OCR.hits=OCR.hits||{};
+  if(m){OCR.hits[m.id]=(OCR.hits[m.id]||[]);OCR.hits[m.id].push(Date.now());OCR.best=m.id;
+    if(m.exact||ocrHits(m.id)>=2){
+      var lt=E.lastTop;
+      if(lt&&lt.id&&lt.id!==m.id&&lt.p>=.6){OCR.hits={};setOcrLine('Leitura duvidosa: tente reposicionar a caixa.')}
+      else{OCR.hits={};offer(m.id,'ocr')}
+    }
+  }
   return m;
 }
 function ocrTick(){
@@ -3311,7 +3315,7 @@ function ocrTick(){
   OCR.busy=true;
   OCR.w.recognize(c).then(function(r){
     var ws=(r.data.words||[]).filter(function(x){return x.confidence>=30}).map(function(x){return x.text});
-    handleOcr(ws);if(!E.pending)setStatus('Lendo a caixa…',Math.max(OCR.prog||0,E.count/S.cfg.frames),false);
+    handleOcr(ws);if(!E.pending)setStatus('Lendo a caixa…',Math.max(ocrProg(),E.count/S.cfg.frames),false);
   }).catch(function(e){console.warn('ocr',e)}).then(function(){OCR.busy=false;setTimeout(ocrTick,150)});
 }
 
@@ -3342,13 +3346,13 @@ function handleProbs(probs){
     if(E.cand===id)E.count++;else{E.cand=id;E.count=1}
     E.miss=0;
     if(E.count>=N){
-      if((id!==E.lastId||E.armed)&&!OCR.ready&&!OCR.loading)offer(id,'scan');
+      if((id!==E.lastId||E.armed)&&!ocrOther(id))offer(id,'scan');
       E.count=N;
     }
-    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Lendo a caixa… '+Math.round(Math.max(OCR.prog||0,Math.min(E.count,N)/N)*100)+'%',Math.max(OCR.prog||0,Math.min(E.count,N)/N),false);
+    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Lendo a caixa… '+Math.round(Math.max(ocrProg(),Math.min(E.count,N)/N)*100)+'%',Math.max(ocrProg(),Math.min(E.count,N)/N),false);
   }else{
     E.cand=null;E.count=0;E.miss++;if(E.miss>=6&&!E.pending){E.armed=true}
-    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Aponte para a caixa',OCR.prog||0,false);
+    if(!E.pending)setStatus(E.armed===false?'Retire a caixa para ler outra':'Aponte para a caixa',ocrProg(),false);
   }
 }
 function hideConfirm(){var c=$('#modal');if(c){c.hidden=true;c.innerHTML='';}E.pending=null}
