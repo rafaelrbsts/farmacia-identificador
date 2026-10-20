@@ -3296,9 +3296,22 @@ var OCR_WIN=7000;
 function ocrOther(id){var o=false;Object.keys(OCR.hits||{}).forEach(function(k){if(k!==id&&ocrHits(k)>0)o=true});return o}
 function ocrHits(id){var n=Date.now();OCR.hits=OCR.hits||{};var l=(OCR.hits[id]||[]).filter(function(x){return n-x<OCR_WIN});OCR.hits[id]=l;return l.length}
 function ocrProg(){var best=0;Object.keys(OCR.hits||{}).forEach(function(id){best=Math.max(best,ocrHits(id))});return Math.min(.95,best/2)}
+var MEDRE=/(comprimido|capsula|generico|medicamento|tarja|uso oral|uso adulto|venda sob|prescri|cartela|\bmg\b|\bml\b|farmac|posologia)/;
+function showUnknown(){
+  var el=$('#modal');E.pending='unknown';OCR.unkUntil=Date.now()+9000;OCR.med=[];
+  el.innerHTML='<div class="box"><div class="small muted">Leitura concluída</div><h3 id="md-t">Remédio não cadastrado</h3><div class="small">Não reconheci esta caixa como um dos remédios do sistema. Confira o nome na caixa ou tente de novo. Se for outro remédio, ele ainda não foi cadastrado.</div><div class="row"><button class="btn primary big" id="md-ok">Ok</button></div></div>';
+  el.hidden=false;beep();$('#md-ok').onclick=function(){hideConfirm();setStatus('Aponte para a caixa',0,false)};$('#md-ok').focus();
+}
 function handleOcr(words){
   var m=matchNames(words);
   OCR.hits=OCR.hits||{};
+  if(!m&&!E.pending&&Date.now()>(OCR.unkUntil||0)){
+    var tx=norm(words.join(' '));
+    if(MEDRE.test(tx)&&!Object.keys(NOMES).some(function(k){return NOMES[k].some(function(n){return tx.replace(/[^a-z]/g,'').indexOf(n)>-1})})){
+      var n=Date.now();OCR.med=(OCR.med||[]).filter(function(x){return n-x<OCR_WIN});OCR.med.push(n);
+      if(OCR.med.length>=3)showUnknown();
+    }
+  }
   if(m){OCR.hits[m.id]=(OCR.hits[m.id]||[]);OCR.hits[m.id].push(Date.now());OCR.best=m.id;
     if(m.exact||ocrHits(m.id)>=2){
       var lt=E.lastTop;
